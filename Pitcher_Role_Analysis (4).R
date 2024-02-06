@@ -260,6 +260,7 @@ effectively do so.
 ###MODEL 1: PITCHERS WHO THROW MULTIPLE DAYS IN A ROW
 
 #Determine the success of each individual pitch in savant table
+#Pitch success is defined below: it is a self created metric aimed to analyze pitcher success independent of outcome
 for (i in 1:nrow(savant_pitch_level)) {
 
   savant_pitch_level$success_pitch[i] <- 0
@@ -361,7 +362,7 @@ back_to_back_players_23 <- savant_pitch_level_rp_group_23 %>%
 names_b2b <- as.vector(back_to_back_players$player_name) #all players who have done it
 names_b2b_23 <- as.vector(back_to_back_players_23$player_name)
 
-#Which pitchers threw back to back and what was their success?
+#Which pitchers threw back to back and were they successful
 b2b_baseline <- savant_pitch_level_rp_group %>%
   filter(player_name %in% names_b2b) %>%
   filter(back_to_back == 0) %>%
@@ -470,7 +471,9 @@ diff_three_performance_23 <- diff_three_performance_23 %>%
   group_by(player_name) %>%
   mutate(diff_dre = dre_per_app_yes - dre_per_app_non,
          diff_success = mean_success_yes - mean_success_no)
-
+'''
+Ultimately decided 3 days in a row was too niche of a variable to use in our final analysis
+'''
 
 #Summarizing the results of b2b
 b2b_diff %>%
@@ -489,17 +492,19 @@ b2b_diff_23 <- b2b_diff_23 %>%
   mutate(b2b_diff_success_oe = diff_success + 0.000394,
          b2b_diff_dre_oe = diff_dre - 0.0226)
 
+
+#Filtering successful pitchers in back to back appearances
+#Success for delta run expectancy is less than 0 and our metric is greater than zero, so half a point of leeway
 b2b_output <- b2b_diff %>%
   group_by(player_name) %>%
   select(player_name, appearances_yes, b2b_diff_success_oe, b2b_diff_dre_oe) %>%
-  filter(appearances_yes > 25) %>%
-  filter(b2b_diff_dre_oe < .5 && b2b_diff_success_oe > -.5)
-
+  filter(appearances_yes > 25) %>% #26+ back to backs over past three years
+  filter(b2b_diff_dre_oe < .5 && b2b_diff_success_oe > -.5) 
 b2b_output_23 <- b2b_diff_23 %>%
   group_by(player_name) %>%
   select(player_name, appearances_yes, b2b_diff_success_oe, b2b_diff_dre_oe) %>%
-  filter(appearances_yes > 8) %>%
-  filter(b2b_diff_dre_oe < .5 && b2b_diff_success_oe > -.5)
+  filter(appearances_yes > 8) %>% #9+ back to backs in 2023
+  filter(b2b_diff_dre_oe < .5 && b2b_diff_success_oe > -.5) 
 
 #Visualize results
 result_multiple_days <- tibble(b2b_output)
@@ -557,6 +562,7 @@ result_five_days_23 <-savant_pitch_level_rp_group_23 %>%
   summarize(TotalPitches = sum(num_pitches), mean_dre = mean(sum_dre),
             success = mean(mean_success), appearances = n())
 
+
 weekly_data <-  savant_pitch_level_rp_group %>%
   mutate(Week = lubridate::floor_date(game_date, unit = "week")) %>%
   group_by(player_name, Week) %>%
@@ -613,28 +619,25 @@ result23_75 <- weekly23_75 %>%
             mean_success_oe_75 = mean(mean_success_oe)) %>%
   arrange(desc(total))
 
-###MODEL 3: Threw multiple innings in one outing
-
-
 
 #TREE DIAGRAMS and LOGISTIC MODEL---------
 
 
 
-#Version 1: All stats except cumalitive
+#Version 1: All stats except cumulative
 fangraphs_tree <- fangraphs_season_level %>% filter(G > 5) %>%
 #  rename(player_name = Name, year = Season) %>%
   select(-PlayerId, -player_name, -MLBAMID, -NameASCII, -GS, -MD, -SD,
          -HLD, -Pulls, -G, -SV, -BS, -HardHit, -H, -TBF, -ER, -Events,
          -Pitches, -HR, -SO, -BB, -IBB, -HBP, -BK, -GB, -LD, -FB, -IFFB,
          -BU, -IFH, -BUH, -Strikes, -Balls, -RS, -R, -IP, -Barrels, -HardHit,
-         -gmLI, -inLI, -exLI, -Team, -L, -W, -RAR, -WAR, -Dollars, -XX_pct)
+         -gmLI, -inLI, -exLI, -Team, -L, -W, -RAR, -WAR, -Dollars, -XX_pct) #Filters out all bulk stats
 
 
-train_frangraphs <- fangraphs_tree %>% filter(year != 2023)
+train_frangraphs <- fangraphs_tree %>% filter(year != 2023) #Train is 2021 and 2022
 
 test_fangraphs <- fangraphs_tree %>% filter(year == 2023) %>%
-  select(-Role)
+  select(-Role) #Test is 2023
 
 
 set.seed(123)
@@ -650,13 +653,13 @@ predictions <- predict(tree_model, test_fangraphs, type = "class")
 # Add the predicted role to the test data
 test_fangraphs <- cbind(test_fangraphs, PredictedRole = predictions)
 
-# Add back the pitcher name and role
+# Add back the pitcher's name and role
 output <- test_fangraphs %>%
   left_join(fangraphs_season_level,
             by = c("Throws", "Age", "K_minus_BB_pct", "SIERA", "WHIP", "BABIP")) %>%
   select(PlayerId, player_name, Role, PredictedRole)
 
-
+#mark mistagged pitchers
 error_label <- output %>%
   filter(Role != PredictedRole)
 
@@ -682,10 +685,10 @@ fangraphs_tree2 <- fangraphs_season_level %>% filter(G > 5) %>%
          Stf_plus_FO, Loc_plus_FO, Pit_plus_FO, Stuff_plus, Location_plus, Pitching_plus)
 
 
-train_frangraphs2 <- fangraphs_tree2 %>% filter(year != 2023)
+train_frangraphs2 <- fangraphs_tree2 %>% filter(year != 2023) #2021 and 2022 train
 
 test_fangraphs2 <- fangraphs_tree2 %>% filter(year == 2023) %>%
-  select(-Role)
+  select(-Role) #2023 test
 
 
 set.seed(123)
@@ -713,7 +716,8 @@ error_label2 <- output2 %>%
 
 
 #Find overlap in two models/Pitchers to dive deeper into
-error_label_starters <- error_label %>% filter(PredictedRole == "SP") %>% mutate(tree_diagram_1 = 1.5)
+#Final labels weight the tree diagram heaviest since it takes into account the most factors in one variable
+error_label_starters <- error_label %>% filter(PredictedRole == "SP") %>% mutate(tree_diagram_1 = 1.5) #Final labels weight the tree d
 
 error_label_starters2 <- error_label2 %>% filter(PredictedRole == "SP") %>% mutate(tree_diagram_2 = 1.5)
 
@@ -726,6 +730,7 @@ result_should_be_starters <- error_label_starters %>%
 
 #FINAL OUTPUT---------
 
+#Qualifying mix is assigned 1 point 
 result_should_be_starters <- result_RP_qualifying_mix %>%
   mutate(qualifying_mix = 1) %>%
   mutate(qualifying_mix = coalesce(qualifying_mix, 0)) %>%
@@ -745,7 +750,8 @@ result_should_be_starters <- result_multiple_days %>%
   select(player_name, multiple_days_2123) %>%
   full_join(result_should_be_starters)
 '''
-
+#Successful back to back outings in 2023 is .75 points compared to 2021-2023 weighted .25 points
+#Want to find pitchers who can do it, but take into account more recently more heavily 
 result_should_be_starters <- b2b_output_23 %>%
   mutate(b2b_output_23 = .75) %>%
   mutate(b2b_output_23 = coalesce(b2b_output_23,0)) %>%
@@ -758,6 +764,8 @@ result_should_be_starters <- b2b_output %>%
   select(player_name, b2b_output) %>%
   full_join(result_should_be_starters)
 
+#Successful 75 pitchs in 2023 is .75 points compared to 2021-2023 weighted .25 points
+#Want to find pitchers who can do it, but take into account more recently more heavily 
 result_should_be_starters <- result23_75 %>%
   mutate(pitches75_23 = .75) %>%
   mutate(pitches75_23 = coalesce(pitches75_23,0)) %>%
@@ -770,12 +778,16 @@ result_should_be_starters <- result_75 %>%
   select(player_name, pitches75) %>%
   full_join(result_should_be_starters)
 
+#Qualifiers is the sum of all these values and must be greater than 2 while having a qualifying pitch mix
+#Qualifying pitch mix + at least one tree diagram or 
+#Qualifying pitch mix + at least 2023 bulk stat or More
 result_should_be_starters <- result_should_be_starters %>%
   mutate(qualifiers = rowSums(select(., c("qualifying_mix", "b2b_output_23",
                                           "b2b_output", "pitches75_23", "pitches75",
                                           "tree_diagram_1", "tree_diagram_2")), na.rm = TRUE)) %>%
-  filter(qualifiers == 1)
+  filter(qualifiers > 2, qualifying_mix == 1)
 
+#Filter out pitchers who used to be starters in previous years and then transitioned to relievers
 result_should_be_starter <- fangraphs_season_level %>%
   group_by(player_name, Role)  %>%
   summarize(PlayerId = mean(PlayerId)) %>%
@@ -785,19 +797,20 @@ result_should_be_starter <- fangraphs_season_level %>%
   select(player_name) %>%
   inner_join(result_should_be_starters)
 
+#Clean Data table
 result_should_be_starter <- result_should_be_starter %>%
   left_join(result_starter_adjusted) %>%
   select(-pitches75, -pitches75_23, -b2b_output, -b2b_output_23,
          -qualifying_mix, -tree_diagram_1, -tree_diagram_2)
 
-
+#Find 2023 qualifying pitchers and what it meant to have good stuff and location over those innings
 starter_threshold <- fangraphs_season_level %>%
   filter(Role == "SP", year == 2023, IP > 161) %>%
   summarize(Stuff_plus = quantile(Stuff_plus, .1),
             Location_plus = quantile(Location_plus, .1),
             Pitching_plus = quantile(Pitching_plus, .1))
 
-
+#Apply those findings to our short list
 result_should_be_starter <- result_should_be_starter %>%
   filter(Starter_adjusted_stff >= starter_threshold$Stuff_plus,
          Starter_adjusted_loc >= starter_threshold$Location_plus,
@@ -806,12 +819,13 @@ result_should_be_starter <- result_should_be_starter %>%
 
 write_csv(result_should_be_starter, "/Users/emmabluman/Desktop/reds_case_study/should_be_starter.csv")
 
+#FINAL OUTPUT BELOW COULD BE RUN ON ITS OWN
 # Loading data
 fread('fangraphs_season_level.csv') -> fg
 fread('savant_pitch_level.csv') -> bs
 fread('should_be_starter.csv') -> names
 
-# Grabbing only the player's info (name, team, etc) and pitch-type specific metrics
+# Grabbing only the player's info (name, team, etc) and pitch-type specific metrics -- same table as above
 fg[, c(1:9, 140:154, 156:242, 251:274, 279:305)] -> fg_reduced
 
 set.seed(1)
@@ -871,7 +885,7 @@ lapply(names$player_name, function(i) {
 
 }) %>% Filter(f = Negate(is.null)) %>% unlist(recursive = F) -> narrowed_down_list
 
-narrowed_down_list
+narrowed_down_list 
 
 
 
